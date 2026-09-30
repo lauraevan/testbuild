@@ -31,7 +31,15 @@ java -cp build/tool dev.testbuild.HybridBuilder fetch-setup work/Eaglercraft-26.
 
 The helper refuses the download unless it is exactly 77,804,659 bytes and matches the release SHA-256.
 
-Run Setup with Java 17+ and use it to create/build a normal 26.2 project from your official 26.2 client JAR:
+Setup can be extracted headlessly too:
+
+```text
+java -cp build/tool dev.testbuild.HybridBuilder install-setup \\
+  work/Eaglercraft-26.2-u1-Setup.jar \\
+  work/eaglercraft-26.2-patcher
+```
+
+That uses the Setup JAR's official `--install-dir` path and verifies that the extracted kit contains the CLI/GUI, source bundle, project skeleton and resource overlay. You can then use the installed GUI/CLI to create/build a normal 26.2 project from your official 26.2 client JAR. Running the Setup JAR normally still opens its desktop installer:
 
 ```text
 java -jar work/Eaglercraft-26.2-u1-Setup.jar
