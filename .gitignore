@@ -1,3 +1,6 @@
+.gradle/
+build/
+out/
 work/
 *.html
-!README.md
+*.asset-swap-receipt.json
