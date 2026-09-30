@@ -26,6 +26,8 @@ public final class HybridBuilderSelfTest {
                     + "  \"tool\": \"" + Pins.TOOL + "\",\n"
                     + "  \"official_client_jar_sha256\": \"" + Pins.OFFICIAL_JAR_SHA256 + "\",\n"
                     + "  \"patch_bundle_sha256\": \"" + Pins.PATCH_BUNDLE_SHA256 + "\",\n"
+                    + "  \"project_skeleton_sha256\": \"" + Pins.PROJECT_SKELETON_SHA256 + "\",\n"
+                    + "  \"resource_overlay_sha256\": \"" + Pins.RESOURCE_OVERLAY_SHA256 + "\",\n"
                     + "  \"final_manifest_sha256\": \"" + Pins.FINAL_MANIFEST_SHA256 + "\",\n"
                     + "  \"final_java_file_count\": " + Pins.FINAL_JAVA_FILES + "\n} \n";
             Files.writeString(project.resolve("receipt.json"), receipt);
