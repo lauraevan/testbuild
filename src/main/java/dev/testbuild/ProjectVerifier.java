@@ -35,20 +35,20 @@ final class ProjectVerifier {
 
     static void print(Inspection i) {
         System.out.println("26.2 project verified: " + i.project());
-        System.out.println("receipt.json       " + i.receipt().sha256());
-        System.out.println("classes.wasm       " + i.classesWasm().sha256());
-        System.out.println("mesh-worker.wasm   " + i.meshWasm().sha256());
-        System.out.println("server-worker.wasm " + i.serverWasm().sha256());
-        System.out.println("assets.epk (26.2)  " + i.assets().sha256());
+        System.out.println("receipt.json        " + i.receipt().sha256());
+        System.out.println("classes.wasm        " + i.classesWasm().sha256());
+        System.out.println("mesh-worker.wasm    " + i.meshWasm().sha256());
+        System.out.println("server-worker.wasm  " + i.serverWasm().sha256());
+        System.out.println("assets.epk (26.2)   " + i.assets().sha256());
     }
 
     private static void field(String json, String key, String expected) {
-        var m = Pattern.compile("\\"" + Pattern.quote(key) + "\\"\\s*:\\s*\\"([^\\"]+)\\"").matcher(json);
+        var m = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(json);
         if (!m.find() || !expected.equals(m.group(1))) throw new HybridBuilder.UserError("receipt mismatch: " + key);
     }
 
     private static void integer(String json, String key, int expected) {
-        var m = Pattern.compile("\\"" + Pattern.quote(key) + "\\"\\s*:\\s*(\\d+)").matcher(json);
+        var m = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*(\\d+)").matcher(json);
         if (!m.find() || Integer.parseInt(m.group(1)) != expected) throw new HybridBuilder.UserError("receipt mismatch: " + key);
     }
 
