@@ -1,55 +1,50 @@
-# Building the pinned 26.2 base
+# Building the current pinned 26.2 base
 
-The Radicle project is the **26.2 u1 source reconstruction/build tooling**, not a complete redistributed game checkout.
-
-Pinned source:
+Current Radicle release:
 
 - RID: `rad:z2BWVCwcwTyoQ2veMJLb1eFpMtJDj`
-- commit: `016a49a92ab4f43db18b892ab7929b62c0e96dba`
+- release ID: `36fcf6e983b7326e9f1cb47c1796f8f5d385e99f`
+- source commit: `24d9c4d0737477e74182ff73b4c2be0e47f5bf5e`
+- Setup artifact: `Eaglercraft-26.2-u1-Setup.jar`
+- Setup SHA-256: `57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd`
+- Setup size: 77,804,659 bytes
 
-The release's own README says it intentionally omits the generated/decompiled game source and several external inputs. That is why `testbuild` does not pretend those files came from the Radicle repo.
+The release describes this as the **complete Normal patcher setup**. The Setup JAR contains the internal source patches, project skeleton, resource overlay, resources and audio used by the GUI workflow. The official Minecraft 26.2 client JAR is still user-supplied.
 
-## Required upstream inputs
-
-The released Java patcher expects authorized copies of:
-
-- official Minecraft 26.2 client JAR
-- Vineflower 1.12.0
-- Java 17 for source reconstruction
-- the pinned source patch bundle
-- the pinned project skeleton for a full Gradle/TeaVM workspace
-- the pinned resource overlay and its external resources for the reviewed resource tree
-- Java 25, Node and npm for the browser build
-- authorized sounds/music EPK inputs for standalone packaging
-
-Important pinned identities embedded by the released patcher:
+Important identities in this release:
 
 ```text
 official 26.2 JAR SHA-256
 40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290
 
 source patch bundle SHA-256
-df3af583c06aa22748d21f039980cdd3923dbc7ab0bc21accbbb28b1cd1e7389
+fd944e9cabbebbf4bddce8a39e1b233b3c7d0cd4f860f9cae37550a3fcfa8b02
 
 project skeleton SHA-256
-e76f606630ce6596061e7ac5a76d01a541846cac7d8d1424ec38a942ab00c071
+3656a83ed8187e2d859612c566f3aa73e242bf1e4633990c5bb4929e0a846c94
 
 resource overlay SHA-256
 2ba7e3376891c64f8bf57f3687e05b8dbe1971a75475b6825449e5e5f96d71f3
 
 final patched Java manifest SHA-256
-3afd3f5a3ddafedc8fcd2bef51828f86f8d0228588a33e393548887ff5cb3d59
+a5924750314f5de9316e9f67b28ce1decee31e27d67b260760b8176cd269243a
 
 final patched Java files
 7142
 ```
 
-## Why the experiment packages with `--skip-build`
+## Asset-swap packaging
 
-The released `wasm-toolchain/build-single-html.js` normally rebuilds source-matched `assets.epk` as part of a full build. For this experiment we first complete the normal 26.2 build, then temporarily replace the already-built web `assets.epk` and invoke:
+Finish a normal 26.2 build first. Its multi-file output lives at:
+
+```text
+target_teavm_wasm_gc/build/web
+```
+
+The experiment deliberately leaves its compiled 26.2 WASMs alone. It temporarily replaces only `assets.epk` with the pinned modified 26.3 archive and packages using:
 
 ```text
 node wasm-toolchain/build-single-html.js --skip-build --output <hybrid.html>
 ```
 
-That path reads the existing `classes.wasm`, `mesh-worker.wasm`, `server-worker.wasm`, runtime JS and EPK files and packages them without relinking the game. The Java helper automatically restores the original 26.2 asset archive afterward.
+The Java helper handles the backup, swap, hash receipt and restoration automatically through `package-26.3`.

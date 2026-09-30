@@ -1,86 +1,78 @@
 # testbuild: 26.3 asset-swap experiment
 
-This repo tests one specific theory: **can the 26.3 backport run on the released 26.2 Java/WASM codebase when only `assets.epk` is changed?**
+This repo tests whether the 26.3 backport can run on the released 26.2 Java/WASM codebase when only `assets.epk` is changed.
 
-The 26.2 base is the released Eaglercraft 26.2 u1 patcher/toolchain source from Radicle:
+## 26.2 base: complete u1 Setup release
+
+The experiment now targets the newer complete Radicle release:
 
 - RID: `rad:z2BWVCwcwTyoQ2veMJLb1eFpMtJDj`
-- pinned head: `016a49a92ab4f43db18b892ab7929b62c0e96dba`
-- release: `u1`
-- exact mirror fallback: `lauraevan/scode`
+- release ID: `36fcf6e983b7326e9f1cb47c1796f8f5d385e99f`
+- source commit: `24d9c4d0737477e74182ff73b4c2be0e47f5bf5e`
+- artifact: `Eaglercraft-26.2-u1-Setup.jar`
+- Setup SHA-256: `57bfcacdf24310d48f462a9a508fe2a59acad8487a8de34bb40963c46183c1bd`
 
-The 26.3 asset archive is pinned to mcjs commit `bc586558628e2d7ef8ea1cebf198495625619eb2` and Git blob `9a0c1dd65b0ff91c57c177c1f053140c7eb74d61`.
+Unlike the older source-only release, this Setup JAR includes the source-patch bundle, project skeleton, resource overlay, resources, Vineflower and bundled audio used by the Normal build flow. You still supply your official Minecraft 26.2 client JAR. Java/build tools are installed or downloaded by Setup as needed.
 
-## Java-first tooling
+The modified 26.3 asset archive is pinned to mcjs commit `bc586558628e2d7ef8ea1cebf198495625619eb2` and Git blob `9a0c1dd65b0ff91c57c177c1f053140c7eb74d61`.
 
-The experiment logic is now Java, not shell. With Java 17 or newer you can compile it directly without Gradle:
+## Build the helper
 
 ```text
 javac --release 17 -d build/tool src/main/java/dev/testbuild/*.java
 java -cp build/tool dev.testbuild.HybridBuilder --help
 ```
 
-### 1. Prepare the exact 26.2 source-tool base
+## 1. Fetch the exact complete 26.2 Setup
 
 ```text
-java -cp build/tool dev.testbuild.HybridBuilder setup-base work/26.2-base
+java -cp build/tool dev.testbuild.HybridBuilder fetch-setup work/Eaglercraft-26.2-u1-Setup.jar
 ```
 
-It attempts the Radicle seed first and falls back to the exact GitHub mirror if the seed's smart-HTTP clone is unavailable. Either way it refuses to continue unless `HEAD` is exactly the pinned Radicle commit.
+The helper refuses the download unless it is exactly 77,804,659 bytes and matches the release SHA-256.
 
-### 2. Fetch the exact 26.3 EPK
+Run Setup with Java 17+ and use it to create/build a normal 26.2 project from your official 26.2 client JAR:
 
 ```text
-java -cp build/tool dev.testbuild.HybridBuilder fetch-assets work/eag26.3-assets.epk
+java -jar work/Eaglercraft-26.2-u1-Setup.jar
 ```
 
-The download is checked against the expected Git blob SHA-1 before it is accepted, then its SHA-256 is printed.
-
-### 3. Build/reconstruct 26.2
-
-Use the released 26.2 patcher to reconstruct the editable Java project and build its normal TeaVM/WASM web output. The upstream release is source-only and intentionally omits several required authorized inputs; see `docs/BUILD_26_2.md`.
-
-### 4. Verify the built 26.2 project
+## 2. Verify the built 26.2 project
 
 ```text
 java -cp build/tool dev.testbuild.HybridBuilder inspect work/26.2-project
 ```
 
-The verifier requires the pinned 26.2 reconstruction receipt, including:
+The verifier checks the new complete-release identities, including:
 
-- official 26.2 JAR SHA-256
-- pinned source-patch bundle SHA-256
-- 7,142 final Java files
-- pinned final patched-source manifest SHA-256
-- built `classes.wasm`
-- built mesh/server worker WASMs
-- the original 26.2 `assets.epk`
+- official 26.2 client JAR SHA-256
+- source bundle `fd944e...`
+- project skeleton `3656a8...`
+- resource overlay identity
+- 7,142 patched Java files
+- final source manifest `a59247...`
+- built main, mesh and server WASMs
+- original 26.2 `assets.epk`
 
-### 5. Package the hybrid
+## 3. Make the modified-EPK build
+
+The easy path is now:
 
 ```text
-java -cp build/tool dev.testbuild.HybridBuilder package \
+java -cp build/tool dev.testbuild.HybridBuilder package-26.3 \
   work/26.2-project \
-  work/eag26.3-assets.epk \
   work/eaglercraft-26.3-asset-swap.html
 ```
 
-The Java builder:
+`package-26.3` automatically downloads Niko's pinned modified 26.3 `assets.epk` into the project cache, verifies its Git blob identity, then:
 
-1. validates the 26.2 source-build receipt;
-2. hashes the 26.2 main/mesh/server WASMs;
-3. temporarily replaces only `target_teavm_wasm_gc/build/web/assets.epk`;
-4. calls the released packager with `--skip-build`, so no Java or WASM is rebuilt;
-5. restores the original 26.2 EPK in a `finally` block even if packaging fails;
-6. writes an `asset-swap-receipt.json` containing the exact hashes used in the experiment.
+1. records the hashes of the genuine 26.2 `classes.wasm`, mesh worker and server worker;
+2. backs up the original 26.2 `assets.epk`;
+3. installs the modified 26.3 EPK into the existing web output;
+4. invokes `wasm-toolchain/build-single-html.js --skip-build`, so the 26.2 code/WASM is not relinked;
+5. restores the original 26.2 EPK even if packaging fails;
+6. writes an `.asset-swap-receipt.json` containing the exact inputs and output SHA-256.
 
-That makes the result a clean **26.2 code + 26.3 assets** test rather than an ambiguous mixed rebuild.
+The resulting HTML is therefore a controlled **new complete-release 26.2 codebase + modified 26.3 assets** experiment.
 
-## Build the helper normally
-
-A small Gradle project is also included for IDE use and conventional builds. The helper itself has no third-party Java dependencies.
-
-```text
-gradle selfTest
-gradle run --args="inspect /path/to/built-26.2-project"
-```
+The lower-level `fetch-assets` and `package` commands remain available when you want to supply the EPK path manually.

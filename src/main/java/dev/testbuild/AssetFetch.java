@@ -22,8 +22,17 @@ final class AssetFetch {
         String blob = Hashes.gitBlobSha1(bytes);
         if (!Pins.ASSET_BLOB_SHA1.equals(blob)) throw new HybridBuilder.UserError("asset blob mismatch: " + blob);
         Files.write(out, bytes);
-        Hashes.Fingerprint fp = Hashes.file(out);
-        System.out.println("26.3 assets: " + out);
+        return verify(out);
+    }
+
+    static Hashes.Fingerprint verify(Path input) throws IOException {
+        Path path = input.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(path)) throw new HybridBuilder.UserError("missing 26.3 EPK: " + path);
+        if (Files.size(path) < 1024) throw new HybridBuilder.UserError("26.3 EPK is implausibly small: " + path);
+        String blob = Hashes.gitBlobSha1(path);
+        if (!Pins.ASSET_BLOB_SHA1.equals(blob)) throw new HybridBuilder.UserError("26.3 EPK blob mismatch: " + blob);
+        Hashes.Fingerprint fp = Hashes.file(path);
+        System.out.println("26.3 assets: " + path);
         System.out.println("Git blob SHA-1: " + blob);
         System.out.println("SHA-256: " + fp.sha256());
         System.out.println("Bytes: " + fp.size());

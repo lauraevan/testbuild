@@ -21,6 +21,8 @@ final class ProjectVerifier {
         expect(compact, q + "tool" + q + ":" + q + Pins.TOOL + q, "tool");
         expect(compact, q + "official_client_jar_sha256" + q + ":" + q + Pins.OFFICIAL_JAR_SHA256 + q, "official JAR");
         expect(compact, q + "patch_bundle_sha256" + q + ":" + q + Pins.PATCH_BUNDLE_SHA256 + q, "patch bundle");
+        expect(compact, q + "project_skeleton_sha256" + q + ":" + q + Pins.PROJECT_SKELETON_SHA256 + q, "project skeleton");
+        expect(compact, q + "resource_overlay_sha256" + q + ":" + q + Pins.RESOURCE_OVERLAY_SHA256 + q, "resource overlay");
         expect(compact, q + "final_manifest_sha256" + q + ":" + q + Pins.FINAL_MANIFEST_SHA256 + q, "final manifest");
         expect(compact, q + "final_java_file_count" + q + ":" + Pins.FINAL_JAVA_FILES, "final Java file count");
 

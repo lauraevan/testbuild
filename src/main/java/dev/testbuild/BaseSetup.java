@@ -13,17 +13,16 @@ final class BaseSetup {
             if (dir.getParent() != null) Files.createDirectories(dir.getParent());
             if (run(null, "git", "clone", Pins.RADICLE_CLONE, dir.toString()) != 0) {
                 if (Files.exists(dir)) deleteTree(dir);
-                System.err.println("Radicle clone unavailable; using exact mirror fallback.");
-                if (run(null, "git", "clone", Pins.MIRROR_CLONE, dir.toString()) != 0)
-                    throw new HybridBuilder.UserError("could not clone the pinned 26.2 base");
+                throw new HybridBuilder.UserError("could not clone the pinned Radicle 26.2 source; use fetch-setup for the complete release package");
             }
         }
         if (run(dir, "git", "checkout", "--detach", Pins.RADICLE_HEAD) != 0)
             throw new HybridBuilder.UserError("could not checkout pinned head " + Pins.RADICLE_HEAD);
         String head = capture(dir, "git", "rev-parse", "HEAD").trim();
         if (!Pins.RADICLE_HEAD.equals(head)) throw new HybridBuilder.UserError("base mismatch: " + head);
-        System.out.println("26.2 base ready: " + dir);
+        System.out.println("26.2 source base ready: " + dir);
         System.out.println("Radicle RID: " + Pins.RADICLE_RID);
+        System.out.println("Release: " + Pins.RADICLE_RELEASE_ID);
         System.out.println("Commit: " + head);
     }
 
