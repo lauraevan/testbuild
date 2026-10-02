@@ -49,6 +49,10 @@ public final class HybridBuilderSelfTest {
             Files.writeString(mc, """
                     package net.minecraft.client;
                     public final class Minecraft {
+                        public Minecraft(Object config) {
+                            int init = 1;
+                        }
+
                         public void tick() {
                             int x = 1;
                             if (x == 2) return;
@@ -56,27 +60,80 @@ public final class HybridBuilderSelfTest {
                     }
                     """);
 
+            Files.writeString(project.resolve("game/build.gradle.kts"), "plugins { java }\n");
             var modded = ModProjectInstaller.prepare(project);
+            check(modded.constructorHookAdded(), "constructor hook added");
             check(modded.tickHookAdded(), "tick hook added");
             String patchedMinecraft = Files.readString(mc);
+            check(patchedMinecraft.contains("// WEBMOD-CONSTRUCTOR-BEGIN"), "constructor hook marker");
+            check(patchedMinecraft.contains("bootstrapCommon()"), "common bootstrap hook");
+            check(patchedMinecraft.contains("bootstrapClient()"), "client bootstrap hook");
             check(patchedMinecraft.contains("// WEBMOD-TICK-BEGIN"), "tick hook marker");
             check(patchedMinecraft.contains("clientTickEnd(this)"), "tick end hook");
             check(Files.isRegularFile(project.resolve("game/src/main/java/net/fabricmc/api/ModInitializer.java")), "fabric initializer API");
-            check(!ModProjectInstaller.prepare(project).tickHookAdded(), "tick hook idempotent");
+            var secondPrepare = ModProjectInstaller.prepare(project);
+            check(!secondPrepare.constructorHookAdded(), "constructor hook idempotent");
+            check(!secondPrepare.tickHookAdded(), "tick hook idempotent");
 
             var mods = temp.resolve("mods");
             Files.createDirectories(mods);
             var fabricJar = mods.resolve("demo-fabric.jar");
             try (var jar = new JarOutputStream(Files.newOutputStream(fabricJar))) {
-                put(jar, "fabric.mod.json", "{\"id\":\"demo\"}");
+                put(jar, "fabric.mod.json", """
+                        {
+                          "schemaVersion": 1,
+                          "id": "demo",
+                          "version": "1.0.0",
+                          "name": "Demo Mod",
+                          "environment": "*",
+                          "entrypoints": {
+                            "main": ["demo.Demo"],
+                            "client": ["demo.DemoClient"]
+                          },
+                          "mixins": ["demo.mixins.json"],
+                          "accessWidener": "demo.classtweaker",
+                          "depends": {
+                            "fabricloader": ">=0.19",
+                            "fabric-api": "*",
+                            "minecraft": "~26.2"
+                          }
+                        }
+                        """);
                 put(jar, "demo/Demo.class", new byte[]{0, 1, 2});
-                put(jar, "demo.mixins.json", "{}");
+                put(jar, "demo/DemoClient.class", new byte[]{0, 1, 2});
+                put(jar, "demo.mixins.json", """
+                        {"package":"demo.mixin","mixins":["OneMixin"],"client":["ClientMixin"]}
+                        """);
+                put(jar, "demo.classtweaker", """
+                        classTweaker v2 official
+                        accessible field net/minecraft/world/entity/Mob goalSelector Ljava/lang/Object;
+                        transitive-extend-enum net/minecraft/world/inventory/RecipeBookType DEMO
+                        """);
+                put(jar, "assets/demo/lang/en_us.json", "{\"item.demo.test\":\"Test\"}");
+                put(jar, "data/demo/recipes/test.json", "{}");
             }
             var reports = ModJarScanner.scanDirectory(mods);
             check(reports.size() == 1, "mod scanner count");
             check(reports.get(0).loaders().contains(ModJarScanner.Loader.FABRIC), "fabric detection");
             check(reports.get(0).hasMixins(), "mixin detection");
             check(!reports.get(0).hasNativeCode(), "native detection");
+
+            var imported = FabricModImporter.importDirectory(project, mods);
+            check(imported.mods().size() == 1, "fabric import count");
+            check(imported.mods().get(0).metadata().commonEntrypoints().equals(java.util.List.of("demo.Demo")), "common entrypoint parse");
+            check(imported.mods().get(0).metadata().clientEntrypoints().equals(java.util.List.of("demo.DemoClient")), "client entrypoint parse");
+            check(imported.mods().get(0).mixinClasses() == 2, "mixin class count");
+            check(imported.mods().get(0).classTweakerDirectives() == 2, "class tweaker count");
+            check(imported.mods().get(0).blockers().stream().anyMatch(s -> s.contains("enum extension")), "enum extension blocker");
+            String generatedEntrypoints = Files.readString(imported.entrypointsSource());
+            check(generatedEntrypoints.contains("new demo.Demo().onInitialize();"), "generated common call");
+            check(generatedEntrypoints.contains("new demo.DemoClient().onInitializeClient();"), "generated client call");
+            check(Files.isRegularFile(project.resolve("game/src/main/resources/assets/demo/lang/en_us.json")), "asset import");
+            check(Files.isRegularFile(project.resolve("game/src/main/resources/data/demo/recipes/test.json")), "data import");
+            String gameGradle = Files.readString(project.resolve("game/build.gradle.kts"));
+            check(gameGradle.contains("WEBMOD-CLASSPATH-BEGIN"), "gradle classpath marker");
+            check(gameGradle.contains("modding/classpath/demo-"), "gradle imported jar");
+            check(Files.readString(imported.report()).contains("requires build-time Mixin transformation"), "import report");
 
             Files.writeString(project.resolve("receipt.json"), receipt.replace(String.valueOf(Pins.FINAL_JAVA_FILES), "1"));
             boolean rejected = false;
