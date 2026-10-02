@@ -61,6 +61,14 @@ public final class HybridBuilderSelfTest {
                     """);
 
             Files.writeString(project.resolve("game/build.gradle.kts"), "plugins { java }\n");
+            var mob = project.resolve("game/src/main/java/net/minecraft/world/entity/Mob.java");
+            Files.createDirectories(mob.getParent());
+            Files.writeString(mob, """
+                    package net.minecraft.world.entity;
+                    public class Mob {
+                        private final Object goalSelector = null;
+                    }
+                    """);
             var modded = ModProjectInstaller.prepare(project);
             check(modded.constructorHookAdded(), "constructor hook added");
             check(modded.tickHookAdded(), "tick hook added");
@@ -124,6 +132,8 @@ public final class HybridBuilderSelfTest {
             check(imported.mods().get(0).metadata().clientEntrypoints().equals(java.util.List.of("demo.DemoClient")), "client entrypoint parse");
             check(imported.mods().get(0).mixinClasses() == 2, "mixin class count");
             check(imported.mods().get(0).classTweakerDirectives() == 2, "class tweaker count");
+            check(imported.mods().get(0).classTweakerApplied() == 1, "class tweaker applied count");
+            check(Files.readString(mob).contains("public final Object goalSelector"), "class tweaker source patch");
             check(imported.mods().get(0).blockers().stream().anyMatch(s -> s.contains("enum extension")), "enum extension blocker");
             String generatedEntrypoints = Files.readString(imported.entrypointsSource());
             check(generatedEntrypoints.contains("new demo.Demo().onInitialize();"), "generated common call");
