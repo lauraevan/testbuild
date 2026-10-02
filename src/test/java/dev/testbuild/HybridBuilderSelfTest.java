@@ -69,6 +69,15 @@ public final class HybridBuilderSelfTest {
                         private final Object goalSelector = null;
                     }
                     """);
+            var recipeBookType = project.resolve("game/src/main/java/net/minecraft/world/inventory/RecipeBookType.java");
+            Files.createDirectories(recipeBookType.getParent());
+            Files.writeString(recipeBookType, """
+                    package net.minecraft.world.inventory;
+                    public enum RecipeBookType {
+                        CRAFTING,
+                        FURNACE;
+                    }
+                    """);
             var modded = ModProjectInstaller.prepare(project);
             check(modded.constructorHookAdded(), "constructor hook added");
             check(modded.tickHookAdded(), "tick hook added");
@@ -132,9 +141,10 @@ public final class HybridBuilderSelfTest {
             check(imported.mods().get(0).metadata().clientEntrypoints().equals(java.util.List.of("demo.DemoClient")), "client entrypoint parse");
             check(imported.mods().get(0).mixinClasses() == 2, "mixin class count");
             check(imported.mods().get(0).classTweakerDirectives() == 2, "class tweaker count");
-            check(imported.mods().get(0).classTweakerApplied() == 1, "class tweaker applied count");
+            check(imported.mods().get(0).classTweakerApplied() == 2, "class tweaker applied count");
             check(Files.readString(mob).contains("public final Object goalSelector"), "class tweaker source patch");
-            check(imported.mods().get(0).blockers().stream().anyMatch(s -> s.contains("enum extension")), "enum extension blocker");
+            check(Files.readString(recipeBookType).contains("DEMO"), "enum extension source patch");
+            check(imported.mods().get(0).blockers().stream().noneMatch(s -> s.contains("enum extension")), "enum extension resolved");
             String generatedEntrypoints = Files.readString(imported.entrypointsSource());
             check(generatedEntrypoints.contains("new demo.Demo().onInitialize();"), "generated common call");
             check(generatedEntrypoints.contains("new demo.DemoClient().onInitializeClient();"), "generated client call");
