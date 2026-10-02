@@ -10,12 +10,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class ModProjectInstaller {
-    private static final String RUNTIME_VERSION = "webmod-runtime-v0.1";
+    private static final String RUNTIME_VERSION = "webmod-runtime-v0.2";
     private static final String TICK_BEGIN = "// WEBMOD-TICK-BEGIN";
+    private static final String CONSTRUCTOR_BEGIN = "// WEBMOD-CONSTRUCTOR-BEGIN";
     private static final Pattern TICK_METHOD =
             Pattern.compile("\\bpublic\\s+void\\s+tick\\s*\\(\\s*\\)\\s*\\{");
+    private static final Pattern MINECRAFT_CONSTRUCTOR =
+            Pattern.compile("\\bpublic\\s+Minecraft\\s*\\(");
 
-    record Result(Path project, Path minecraftSource, List<Path> writtenFiles, boolean tickHookAdded) {}
+    record Result(Path project, Path minecraftSource, List<Path> writtenFiles,
+                  boolean constructorHookAdded, boolean tickHookAdded) {}
 
     static Result prepare(Path input) throws IOException {
         Path project = input.toAbsolutePath().normalize();
@@ -31,34 +35,84 @@ final class ModProjectInstaller {
 
         List<Path> written = new ArrayList<>();
         written.add(write(gameJava.resolve("dev/eagler/modding/WebModRuntime.java"), runtimeSource()));
-        written.add(write(gameJava.resolve("dev/eagler/modding/generated/GeneratedModEntrypoints.java"), generatedEntrypointsSource()));
+
+        Path generatedEntrypoints = gameJava.resolve("dev/eagler/modding/generated/GeneratedModEntrypoints.java");
+        if (!Files.isRegularFile(generatedEntrypoints)) {
+            written.add(write(generatedEntrypoints, generatedEntrypointsSource()));
+        }
+
         written.add(write(gameJava.resolve("net/fabricmc/api/ModInitializer.java"), modInitializerSource()));
         written.add(write(gameJava.resolve("net/fabricmc/api/ClientModInitializer.java"), clientModInitializerSource()));
-        written.add(write(gameJava.resolve("net/fabricmc/fabric/api/client/event/lifecycle/v1/ClientTickEvents.java"), clientTickEventsSource()));
+        written.addAll(FabricCompatInstaller.install(gameJava));
 
         Path modding = project.resolve("modding");
         Files.createDirectories(modding.resolve("mods"));
+        Files.createDirectories(modding.resolve("classpath"));
         Files.createDirectories(modding.resolve("generated"));
+        Files.createDirectories(modding.resolve("reports"));
         written.add(write(modding.resolve("README.md"), generatedReadme()));
         written.add(write(modding.resolve(".runtime-version"), RUNTIME_VERSION + "\n"));
 
         String source = Files.readString(minecraft, StandardCharsets.UTF_8);
-        boolean hookAdded = false;
-        if (!source.contains(TICK_BEGIN)) {
-            String patched = wrapTick(source);
-            Files.writeString(minecraft, patched, StandardCharsets.UTF_8);
-            hookAdded = true;
+        boolean constructorAdded = false;
+        if (!source.contains(CONSTRUCTOR_BEGIN)) {
+            source = hookConstructor(source);
+            constructorAdded = true;
         }
 
-        return new Result(project, minecraft, List.copyOf(written), hookAdded);
+        boolean tickAdded = false;
+        if (!source.contains(TICK_BEGIN)) {
+            source = wrapTick(source);
+            tickAdded = true;
+        }
+
+        if (constructorAdded || tickAdded) {
+            Files.writeString(minecraft, source, StandardCharsets.UTF_8);
+        }
+
+        return new Result(project, minecraft, List.copyOf(written), constructorAdded, tickAdded);
     }
 
     static void print(Result result) {
         System.out.println("Mod-ready 26.2 source prepared: " + result.project());
-        System.out.println("Runtime files written: " + result.writtenFiles().size());
+        System.out.println("Runtime/API files written: " + result.writtenFiles().size());
+        System.out.println("Minecraft constructor hook: " + (result.constructorHookAdded() ? "installed" : "already present"));
         System.out.println("Minecraft tick hook: " + (result.tickHookAdded() ? "installed" : "already present"));
         System.out.println("Mods staging directory: " + result.project().resolve("modding/mods"));
-        System.out.println("Next: scan-mods <mods-directory>, then add static entrypoint/Mixin compilation.");
+        System.out.println("Next: import-fabric <project> <mods-directory>");
+    }
+
+    private static String hookConstructor(String source) {
+        Matcher matcher = MINECRAFT_CONSTRUCTOR.matcher(source);
+        int matchStart = -1;
+        int paren = -1;
+        int matches = 0;
+        while (matcher.find()) {
+            matches++;
+            matchStart = matcher.start();
+            paren = source.indexOf('(', matcher.start());
+        }
+        if (matches == 0) throw new HybridBuilder.UserError("could not find public Minecraft(...) constructor; refusing to guess");
+        if (matches > 1) throw new HybridBuilder.UserError("found multiple public Minecraft(...) constructors; refusing to guess");
+
+        int closeParen = matchingDelimiter(source, paren, '(', ')');
+        if (closeParen < 0) throw new HybridBuilder.UserError("could not parse Minecraft constructor parameters");
+
+        int open = source.indexOf('{', closeParen);
+        if (open < 0) throw new HybridBuilder.UserError("could not find Minecraft constructor body");
+        int close = matchingBrace(source, open);
+        if (close < 0) throw new HybridBuilder.UserError("could not find end of Minecraft constructor");
+
+        String begin = "\n        " + CONSTRUCTOR_BEGIN
+                + "\n        dev.eagler.modding.WebModRuntime.bootstrapCommon();"
+                + "\n        // WEBMOD-CONSTRUCTOR-COMMON-END\n";
+        String end = "\n        // WEBMOD-CONSTRUCTOR-CLIENT-BEGIN"
+                + "\n        dev.eagler.modding.WebModRuntime.bootstrapClient();"
+                + "\n        // WEBMOD-CONSTRUCTOR-END\n";
+
+        return source.substring(0, open + 1) + begin
+                + source.substring(open + 1, close) + end
+                + source.substring(close);
     }
 
     private static String wrapTick(String source) {
@@ -90,21 +144,15 @@ final class ModProjectInstaller {
         return before + start + body + end + after;
     }
 
-    private static int matchingBrace(String text, int open) {
+    private static int matchingDelimiter(String text, int open, char left, char right) {
         int depth = 0;
         boolean string = false, character = false, lineComment = false, blockComment = false, escape = false;
         for (int i = open; i < text.length(); i++) {
             char c = text.charAt(i);
             char n = i + 1 < text.length() ? text.charAt(i + 1) : 0;
 
-            if (lineComment) {
-                if (c == '\n') lineComment = false;
-                continue;
-            }
-            if (blockComment) {
-                if (c == '*' && n == '/') { blockComment = false; i++; }
-                continue;
-            }
+            if (lineComment) { if (c == '\n') lineComment = false; continue; }
+            if (blockComment) { if (c == '*' && n == '/') { blockComment = false; i++; } continue; }
             if (string) {
                 if (escape) { escape = false; continue; }
                 if (c == '\\') { escape = true; continue; }
@@ -122,10 +170,14 @@ final class ModProjectInstaller {
             if (c == '/' && n == '*') { blockComment = true; i++; continue; }
             if (c == '"') { string = true; continue; }
             if (c == '\'') { character = true; continue; }
-            if (c == '{') depth++;
-            else if (c == '}' && --depth == 0) return i;
+            if (c == left) depth++;
+            else if (c == right && --depth == 0) return i;
         }
         return -1;
+    }
+
+    private static int matchingBrace(String text, int open) {
+        return matchingDelimiter(text, open, '{', '}');
     }
 
     private static Path write(Path path, String content) throws IOException {
@@ -151,21 +203,29 @@ final class ModProjectInstaller {
                 import net.minecraft.client.Minecraft;
 
                 public final class WebModRuntime {
-                    private static boolean initialized;
+                    private static boolean commonInitialized;
+                    private static boolean clientInitialized;
+
+                    public static void bootstrapCommon() {
+                        if (commonInitialized) return;
+                        commonInitialized = true;
+                        GeneratedModEntrypoints.initializeCommon();
+                    }
+
+                    public static void bootstrapClient() {
+                        if (clientInitialized) return;
+                        bootstrapCommon();
+                        clientInitialized = true;
+                        GeneratedModEntrypoints.initializeClient();
+                    }
 
                     public static void clientTickStart(Minecraft client) {
-                        ensureInitialized();
-                        ClientTickEvents.fireStart(client);
+                        bootstrapClient();
+                        ClientTickEvents.START_CLIENT_TICK.invoker().onStartTick(client);
                     }
 
                     public static void clientTickEnd(Minecraft client) {
-                        ClientTickEvents.fireEnd(client);
-                    }
-
-                    private static void ensureInitialized() {
-                        if (initialized) return;
-                        initialized = true;
-                        GeneratedModEntrypoints.initialize();
+                        ClientTickEvents.END_CLIENT_TICK.invoker().onEndTick(client);
                     }
 
                     private WebModRuntime() {}
@@ -178,11 +238,14 @@ final class ModProjectInstaller {
                 package dev.eagler.modding.generated;
 
                 /**
-                 * Rewritten by the mod compiler. The empty version keeps a vanilla mod-ready
-                 * build valid before any external mod JAR has been imported.
+                 * Rewritten by import-fabric. The empty version keeps the browser client
+                 * buildable before any external mod JARs are imported.
                  */
                 public final class GeneratedModEntrypoints {
-                    public static void initialize() {
+                    public static void initializeCommon() {
+                    }
+
+                    public static void initializeClient() {
                     }
 
                     private GeneratedModEntrypoints() {}
@@ -210,87 +273,23 @@ final class ModProjectInstaller {
                 """;
     }
 
-    private static String clientTickEventsSource() {
-        return """
-                package net.fabricmc.fabric.api.client.event.lifecycle.v1;
-
-                import java.util.ArrayList;
-                import java.util.List;
-                import java.util.Objects;
-                import net.minecraft.client.Minecraft;
-
-                public final class ClientTickEvents {
-                    @FunctionalInterface
-                    public interface StartTick {
-                        void onStartTick(Minecraft client);
-                    }
-
-                    @FunctionalInterface
-                    public interface EndTick {
-                        void onEndTick(Minecraft client);
-                    }
-
-                    public static final StartEvent START_CLIENT_TICK = new StartEvent();
-                    public static final EndEvent END_CLIENT_TICK = new EndEvent();
-
-                    public static final class StartEvent {
-                        private final List<StartTick> listeners = new ArrayList<>();
-
-                        public void register(StartTick listener) {
-                            listeners.add(Objects.requireNonNull(listener, "listener"));
-                        }
-
-                        private void fire(Minecraft client) {
-                            for (StartTick listener : List.copyOf(listeners)) listener.onStartTick(client);
-                        }
-                    }
-
-                    public static final class EndEvent {
-                        private final List<EndTick> listeners = new ArrayList<>();
-
-                        public void register(EndTick listener) {
-                            listeners.add(Objects.requireNonNull(listener, "listener"));
-                        }
-
-                        private void fire(Minecraft client) {
-                            for (EndTick listener : List.copyOf(listeners)) listener.onEndTick(client);
-                        }
-                    }
-
-                    public static void fireStart(Minecraft client) {
-                        START_CLIENT_TICK.fire(client);
-                    }
-
-                    public static void fireEnd(Minecraft client) {
-                        END_CLIENT_TICK.fire(client);
-                    }
-
-                    private ClientTickEvents() {}
-                }
-                """;
-    }
-
     private static String generatedReadme() {
         return """
                 # 26.2 browser mod runtime
 
-                This project has the first source-level modding hooks installed.
+                This generated project contains the browser mod compatibility layer.
 
-                Current working pieces:
-                - Minecraft client tick is wrapped with start/end mod-runtime hooks.
-                - Fabric ModInitializer and ClientModInitializer API types are present.
-                - Fabric ClientTickEvents START_CLIENT_TICK and END_CLIENT_TICK are wired.
-                - modding/mods is the staging directory for external JARs.
-                - The build helper can identify Fabric, Forge and NeoForge metadata and flag Mixins/native code.
+                Current pipeline:
+                - source-level common/client bootstrap hooks in Minecraft's constructor;
+                - client tick start/end events;
+                - Fabric metadata/entrypoint import support;
+                - staged mod JAR classpath support;
+                - mod assets/data resource import with collision checks;
+                - a focused Fabric API compatibility slice for Farmer's Delight startup;
+                - compatibility reporting for Mixins, class tweakers and native binaries.
 
-                Not implemented yet:
-                - fabric.mod.json entrypoint generation from real JARs.
-                - build-time Mixin transformation.
-                - the Forge/FML event bus and registry compatibility layer.
-                - automatic dependency remapping/resolution.
-                - dynamic runtime class loading. Browser mods will be statically compiled into the TeaVM/Wasm build.
-
-                Do not treat a successfully scanned JAR as compatible until the compiler stage accepts it.
+                The browser build is ahead-of-time compiled. JARs are imported before TeaVM/Wasm-GC;
+                there is no JVM class loader inside the browser.
                 """;
     }
 
