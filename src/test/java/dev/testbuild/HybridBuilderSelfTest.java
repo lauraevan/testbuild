@@ -2,6 +2,8 @@ package dev.testbuild;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 public final class HybridBuilderSelfTest {
     public static void main(String[] args) throws Exception {
@@ -40,6 +42,42 @@ public final class HybridBuilderSelfTest {
             check(Files.readString(web.resolve("assets.epk")).equals("original"), "asset restore");
             check(!Files.exists(web.resolve("assets.epk.testbuild-original")), "backup removed");
 
+            Files.writeString(project.resolve("settings.gradle.kts"), "rootProject.name = \"fake\"\n");
+            Files.writeString(project.resolve("build.gradle.kts"), "plugins { java }\n");
+            var mc = project.resolve("game/src/main/java/net/minecraft/client/Minecraft.java");
+            Files.createDirectories(mc.getParent());
+            Files.writeString(mc, """
+                    package net.minecraft.client;
+                    public final class Minecraft {
+                        public void tick() {
+                            int x = 1;
+                            if (x == 2) return;
+                        }
+                    }
+                    """);
+
+            var modded = ModProjectInstaller.prepare(project);
+            check(modded.tickHookAdded(), "tick hook added");
+            String patchedMinecraft = Files.readString(mc);
+            check(patchedMinecraft.contains("// WEBMOD-TICK-BEGIN"), "tick hook marker");
+            check(patchedMinecraft.contains("clientTickEnd(this)"), "tick end hook");
+            check(Files.isRegularFile(project.resolve("game/src/main/java/net/fabricmc/api/ModInitializer.java")), "fabric initializer API");
+            check(!ModProjectInstaller.prepare(project).tickHookAdded(), "tick hook idempotent");
+
+            var mods = temp.resolve("mods");
+            Files.createDirectories(mods);
+            var fabricJar = mods.resolve("demo-fabric.jar");
+            try (var jar = new JarOutputStream(Files.newOutputStream(fabricJar))) {
+                put(jar, "fabric.mod.json", "{\"id\":\"demo\"}");
+                put(jar, "demo/Demo.class", new byte[]{0, 1, 2});
+                put(jar, "demo.mixins.json", "{}");
+            }
+            var reports = ModJarScanner.scanDirectory(mods);
+            check(reports.size() == 1, "mod scanner count");
+            check(reports.get(0).loaders().contains(ModJarScanner.Loader.FABRIC), "fabric detection");
+            check(reports.get(0).hasMixins(), "mixin detection");
+            check(!reports.get(0).hasNativeCode(), "native detection");
+
             Files.writeString(project.resolve("receipt.json"), receipt.replace(String.valueOf(Pins.FINAL_JAVA_FILES), "1"));
             boolean rejected = false;
             try { ProjectVerifier.inspect(project); }
@@ -52,6 +90,16 @@ public final class HybridBuilderSelfTest {
                 for (var p : s.sorted((a,b) -> b.getNameCount() - a.getNameCount()).toList()) Files.deleteIfExists(p);
             }
         }
+    }
+
+    private static void put(JarOutputStream jar, String name, String value) throws Exception {
+        put(jar, name, value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void put(JarOutputStream jar, String name, byte[] value) throws Exception {
+        jar.putNextEntry(new JarEntry(name));
+        jar.write(value);
+        jar.closeEntry();
     }
 
     private static void check(boolean ok, String name) {
