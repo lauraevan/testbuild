@@ -20,7 +20,7 @@ final class FabricModImporter {
 
     record ImportedMod(Path sourceJar, Path classpathJar, FabricModMetadata.Data metadata,
                        int resourcesCopied, int mixinClasses, int classTweakerDirectives,
-                       List<String> blockers) {}
+                       int classTweakerApplied, List<String> blockers) {}
 
     record Result(Path project, List<ImportedMod> mods, Path entrypointsSource, Path report,
                   List<Path> patchedGradleFiles) {}
@@ -75,7 +75,8 @@ final class FabricModImporter {
                     + " -> " + mod.classpathJar().getFileName());
             System.out.println("    resources copied: " + mod.resourcesCopied());
             System.out.println("    mixin classes: " + mod.mixinClasses());
-            System.out.println("    class tweaker directives: " + mod.classTweakerDirectives());
+            System.out.println("    class tweaker directives: " + mod.classTweakerDirectives()
+                    + " (" + mod.classTweakerApplied() + " applied to Java source)");
             if (!mod.blockers().isEmpty()) {
                 System.out.println("    blockers:");
                 for (String blocker : mod.blockers()) System.out.println("      - " + blocker);
@@ -107,6 +108,7 @@ final class FabricModImporter {
         int resources = 0;
         int mixinClasses = 0;
         int tweakDirectives = 0;
+        int tweakApplied = 0;
         try (JarFile jf = new JarFile(jar.toFile(), false)) {
             copyEntry(jf, "fabric.mod.json", metaDir.resolve("fabric.mod.json"));
 
@@ -130,9 +132,15 @@ final class FabricModImporter {
                     String text = readUtf8(jf, entry);
                     Path copy = metaDir.resolve(Path.of(meta.accessWidener()).getFileName().toString());
                     Files.writeString(copy, text, StandardCharsets.UTF_8);
-                    var tweaks = analyzeClassTweaker(text);
+                    ClassTweakerApplier.Result tweaks = ClassTweakerApplier.apply(project, text);
                     tweakDirectives = tweaks.directives();
-                    blockers.addAll(tweaks.blockers());
+                    tweakApplied = tweaks.applied();
+                    for (String unresolved : tweaks.unresolved()) {
+                        blockers.add("unresolved class tweaker transform: " + unresolved);
+                    }
+                    for (String enumExtension : tweaks.enumExtensions()) {
+                        blockers.add("requires enum extension transform: " + enumExtension);
+                    }
                 }
             }
 
@@ -160,7 +168,7 @@ final class FabricModImporter {
             }
         }
 
-        return new ImportedMod(jar, staged, meta, resources, mixinClasses, tweakDirectives, List.copyOf(blockers));
+        return new ImportedMod(jar, staged, meta, resources, mixinClasses, tweakDirectives, tweakApplied, List.copyOf(blockers));
     }
 
     private static Path writeEntrypoints(Path project, List<ImportedMod> mods) throws IOException {
@@ -243,6 +251,7 @@ final class FabricModImporter {
             out.append("  copied resources: ").append(mod.resourcesCopied()).append('\n');
             out.append("  mixin classes requiring transformation: ").append(mod.mixinClasses()).append('\n');
             out.append("  class tweaker directives: ").append(mod.classTweakerDirectives()).append('\n');
+            out.append("  class tweaker directives applied: ").append(mod.classTweakerApplied()).append('\n');
             if (mod.blockers().isEmpty()) {
                 out.append("  preflight: no known hard blocker in this stage\n");
             } else {
@@ -255,28 +264,6 @@ final class FabricModImporter {
         for (Path path : gradleFiles) out.append("  - ").append(path).append('\n');
         out.append("\nA clean preflight does not guarantee TeaVM compatibility. The next gate is :game:compileJava / TeaVM link after transformations.\n");
         return out.toString();
-    }
-
-    private record TweakerAnalysis(int directives, List<String> blockers) {}
-
-    private static TweakerAnalysis analyzeClassTweaker(String text) {
-        int directives = 0;
-        List<String> blockers = new ArrayList<>();
-        for (String raw : text.split("\\R")) {
-            String line = raw.strip();
-            if (line.isEmpty() || line.startsWith("#") || line.startsWith("classTweaker ")) continue;
-            directives++;
-            if (line.startsWith("transitive-extend-enum ") || line.startsWith("extend-enum ")) {
-                blockers.add("requires enum extension transform: " + line);
-            } else if (line.startsWith("accessible ") || line.startsWith("transitive-accessible ")
-                    || line.startsWith("mutable ") || line.startsWith("transitive-mutable ")
-                    || line.startsWith("extendable ") || line.startsWith("transitive-extendable ")) {
-                blockers.add("requires class tweaker/access transform: " + line);
-            } else {
-                blockers.add("unsupported class tweaker directive: " + line);
-            }
-        }
-        return new TweakerAnalysis(directives, List.copyOf(blockers));
     }
 
     private static int countMixinClasses(String json) {
