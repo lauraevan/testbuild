@@ -20,6 +20,18 @@ public final class HybridBuilder {
                 case "setup-base" -> { count(args, 2, 2); BaseSetup.setup(Path.of(args[1])); }
                 case "fetch-assets" -> { count(args, 1, 2); AssetFetch.fetch(args.length == 2 ? Path.of(args[1]) : Path.of("eag26.3-assets.epk")); }
                 case "inspect" -> { count(args, 2, 2); ProjectVerifier.print(ProjectVerifier.inspect(Path.of(args[1]))); }
+                case "prepare-modded" -> {
+                    count(args, 2, 2);
+                    ModProjectInstaller.print(ModProjectInstaller.prepare(Path.of(args[1])));
+                }
+                case "scan-mods" -> {
+                    count(args, 2, 2);
+                    ModJarScanner.print(ModJarScanner.scanDirectory(Path.of(args[1])));
+                }
+                case "import-fabric" -> {
+                    count(args, 3, 3);
+                    FabricModImporter.print(FabricModImporter.importDirectory(Path.of(args[1]), Path.of(args[2])));
+                }
                 case "package" -> {
                     count(args, 3, 4);
                     Path project = Path.of(args[1]);
@@ -49,20 +61,32 @@ public final class HybridBuilder {
     }
 
     private static void usage() {
-        System.out.println("testbuild 26.3 asset-swap builder\nUsage:");
+        System.out.println("testbuild 26.2/26.3 source helper\nUsage:");
         System.out.println("  fetch-setup [Eaglercraft-26.2-u1-Setup.jar]");
         System.out.println("  install-setup <Setup.jar> <new-or-verified-kit-directory>");
         System.out.println("  setup-base <source-directory>");
         System.out.println("  fetch-assets [output.epk]");
         System.out.println("  inspect <built-26.2-project>");
+        System.out.println("  prepare-modded <generated-26.2-project>");
+        System.out.println("  scan-mods <mods-directory>");
+        System.out.println("  import-fabric <generated-26.2-project> <mods-directory>");
         System.out.println("  package <built-26.2-project> <26.3-assets.epk> [output.html]");
         System.out.println("  package-26.3 <built-26.2-project> [output.html]");
         System.out.println("  restore <built-26.2-project>");
-        System.out.println("\npackage-26.3 fetches/verifies the pinned modified 26.3 EPK, swaps only assets.epk,");
+        System.out.println("\nprepare-modded installs source-level browser mod runtime hooks and the first Fabric API bridge.");
+        System.out.println("scan-mods detects Fabric/Forge/NeoForge metadata, Mixins and native binaries without executing mod code.");
+        System.out.println("import-fabric stages real Fabric JARs, resources and generated static entrypoints for TeaVM/Wasm-GC.");
+        System.out.println("package-26.3 fetches/verifies the pinned modified 26.3 EPK, swaps only assets.epk,");
         System.out.println("packages with --skip-build, then restores the original 26.2 assets.");
     }
 
-    private static void count(String[] a, int min, int max) { if (a.length < min || a.length > max) throw new UserError("wrong arguments; use --help"); }
-    static final class UserError extends RuntimeException { UserError(String m) { super(m); } }
+    private static void count(String[] a, int min, int max) {
+        if (a.length < min || a.length > max) throw new UserError("wrong arguments; use --help");
+    }
+
+    static final class UserError extends RuntimeException {
+        UserError(String m) { super(m); }
+    }
+
     private HybridBuilder() {}
 }
