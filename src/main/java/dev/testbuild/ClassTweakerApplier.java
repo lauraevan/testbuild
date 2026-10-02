@@ -37,7 +37,28 @@ final class ClassTweakerApplier {
             }
 
             if ("extend-enum".equals(parts[0])) {
-                enumExtensions.add(line);
+                if (parts.length < 3) {
+                    enumExtensions.add(line + " (malformed)");
+                    continue;
+                }
+                String internalName = parts[1];
+                String constantName = parts[2];
+                SourceTarget target = target(javaRoot, internalName);
+                if (!Files.isRegularFile(target.file())) {
+                    enumExtensions.add(line + " (missing source)");
+                    continue;
+                }
+                String source = sources.computeIfAbsent(target.file(), p -> {
+                    try { return Files.readString(p, StandardCharsets.UTF_8); }
+                    catch (IOException e) { throw new ReadFailure(e); }
+                });
+                Patch patch = extendEnum(source, target.simpleName(), constantName);
+                if (!patch.changed()) {
+                    enumExtensions.add(line + " (" + patch.reason() + ")");
+                    continue;
+                }
+                sources.put(target.file(), patch.source());
+                applied++;
                 continue;
             }
 
@@ -122,6 +143,107 @@ final class ClassTweakerApplier {
     private record Patch(boolean changed, String source, String reason) {
         static Patch fail(String reason) { return new Patch(false, null, reason); }
         static Patch ok(String source) { return new Patch(true, source, ""); }
+    }
+
+    private static Patch extendEnum(String source, String simpleName, String constantName) {
+        Pattern constructor = Pattern.compile("\\b" + Pattern.quote(simpleName) + "\\s*\\(([^)]*)\\)\\s*\\{");
+        Matcher cm = constructor.matcher(source);
+        while (cm.find()) {
+            if (!cm.group(1).isBlank()) return Patch.fail("enum constructor requires arguments");
+        }
+
+        Pattern declaration = Pattern.compile("\\benum\\s+" + Pattern.quote(simpleName) + "\\b");
+        Matcher dm = declaration.matcher(source);
+        if (!dm.find()) return Patch.fail("enum declaration not found");
+        if (dm.find()) return Patch.fail("multiple enum declarations found");
+
+        dm = declaration.matcher(source);
+        dm.find();
+        int open = source.indexOf('{', dm.end());
+        if (open < 0) return Patch.fail("enum body not found");
+        int close = matchingBrace(source, open);
+        if (close < 0) return Patch.fail("enum body end not found");
+
+        int delimiter = topLevelSemicolon(source, open, close);
+        if (delimiter < 0) delimiter = close;
+        String constants = source.substring(open + 1, delimiter);
+        if (Pattern.compile("\\b" + Pattern.quote(constantName) + "\\b").matcher(constants).find()) {
+            return Patch.fail("enum constant already present");
+        }
+
+        int last = delimiter - 1;
+        while (last > open && Character.isWhitespace(source.charAt(last))) last--;
+        String prefix = source.substring(0, last + 1);
+        String suffix = source.substring(last + 1);
+        boolean empty = last == open;
+        boolean comma = !empty && source.charAt(last) == ',';
+        String insertion = empty ? "\n    " + constantName
+                : (comma ? "\n    " + constantName : ",\n    " + constantName);
+        return Patch.ok(prefix + insertion + suffix);
+    }
+
+    private static int topLevelSemicolon(String text, int open, int close) {
+        int braceDepth = 1;
+        int parenDepth = 0;
+        boolean string = false, character = false, lineComment = false, blockComment = false, escape = false;
+        for (int i = open + 1; i < close; i++) {
+            char ch = text.charAt(i);
+            char next = i + 1 < close ? text.charAt(i + 1) : 0;
+            if (lineComment) { if (ch == '\n') lineComment = false; continue; }
+            if (blockComment) { if (ch == '*' && next == '/') { blockComment = false; i++; } continue; }
+            if (string) {
+                if (escape) { escape = false; continue; }
+                if (ch == '\\') { escape = true; continue; }
+                if (ch == '"') string = false;
+                continue;
+            }
+            if (character) {
+                if (escape) { escape = false; continue; }
+                if (ch == '\\') { escape = true; continue; }
+                if (ch == '\'') character = false;
+                continue;
+            }
+            if (ch == '/' && next == '/') { lineComment = true; i++; continue; }
+            if (ch == '/' && next == '*') { blockComment = true; i++; continue; }
+            if (ch == '"') { string = true; continue; }
+            if (ch == '\'') { character = true; continue; }
+            if (ch == '(') parenDepth++;
+            else if (ch == ')') parenDepth--;
+            else if (ch == '{') braceDepth++;
+            else if (ch == '}') braceDepth--;
+            else if (ch == ';' && braceDepth == 1 && parenDepth == 0) return i;
+        }
+        return -1;
+    }
+
+    private static int matchingBrace(String text, int open) {
+        int depth = 0;
+        boolean string = false, character = false, lineComment = false, blockComment = false, escape = false;
+        for (int i = open; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            char next = i + 1 < text.length() ? text.charAt(i + 1) : 0;
+            if (lineComment) { if (ch == '\n') lineComment = false; continue; }
+            if (blockComment) { if (ch == '*' && next == '/') { blockComment = false; i++; } continue; }
+            if (string) {
+                if (escape) { escape = false; continue; }
+                if (ch == '\\') { escape = true; continue; }
+                if (ch == '"') string = false;
+                continue;
+            }
+            if (character) {
+                if (escape) { escape = false; continue; }
+                if (ch == '\\') { escape = true; continue; }
+                if (ch == '\'') character = false;
+                continue;
+            }
+            if (ch == '/' && next == '/') { lineComment = true; i++; continue; }
+            if (ch == '/' && next == '*') { blockComment = true; i++; continue; }
+            if (ch == '"') { string = true; continue; }
+            if (ch == '\'') { character = true; continue; }
+            if (ch == '{') depth++;
+            else if (ch == '}' && --depth == 0) return i;
+        }
+        return -1;
     }
 
     private static Patch makeClassAccessible(String source, String simpleName) {
