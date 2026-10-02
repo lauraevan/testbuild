@@ -28,6 +28,10 @@ public final class HybridBuilder {
                     count(args, 2, 2);
                     ModJarScanner.print(ModJarScanner.scanDirectory(Path.of(args[1])));
                 }
+                case "import-fabric" -> {
+                    count(args, 3, 3);
+                    FabricModImporter.print(FabricModImporter.importDirectory(Path.of(args[1]), Path.of(args[2])));
+                }
                 case "package" -> {
                     count(args, 3, 4);
                     Path project = Path.of(args[1]);
@@ -65,11 +69,13 @@ public final class HybridBuilder {
         System.out.println("  inspect <built-26.2-project>");
         System.out.println("  prepare-modded <generated-26.2-project>");
         System.out.println("  scan-mods <mods-directory>");
+        System.out.println("  import-fabric <generated-26.2-project> <mods-directory>");
         System.out.println("  package <built-26.2-project> <26.3-assets.epk> [output.html]");
         System.out.println("  package-26.3 <built-26.2-project> [output.html]");
         System.out.println("  restore <built-26.2-project>");
         System.out.println("\nprepare-modded installs source-level browser mod runtime hooks and the first Fabric API bridge.");
         System.out.println("scan-mods detects Fabric/Forge/NeoForge metadata, Mixins and native binaries without executing mod code.");
+        System.out.println("import-fabric stages real Fabric JARs, resources and generated static entrypoints for TeaVM/Wasm-GC.");
         System.out.println("package-26.3 fetches/verifies the pinned modified 26.3 EPK, swaps only assets.epk,");
         System.out.println("packages with --skip-build, then restores the original 26.2 assets.");
     }
