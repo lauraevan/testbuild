@@ -53,8 +53,104 @@ jobs:
               (">GAIUS<span>CLIENT</span>",">MINECRAFT<span>26.3</span>"),
               ("<strong>GAIUS</strong><span>CLIENT</span>","<strong>MINECRAFT</strong><span>26.3</span>"),
               ("Starting Gaius Client","Starting Minecraft 26.3"),
+              ("<strong>Gaius Client</strong> | independent browser software",""),
+              ("BROWSER CLIENT",""),
           ]:
               text=text.replace(old,new)
+
+          shell_override = r"""
+          <style id="minecraft263-boot-override">
+            :root {
+              --gaius-shell-bg: #000 !important;
+              --gaius-shell-panel: #000 !important;
+              --gaius-shell-panel-strong: #000 !important;
+              --gaius-shell-line: #fff !important;
+              --gaius-shell-muted: #9a9a9a !important;
+              --gaius-shell-text: #fff !important;
+              --gaius-shell-accent: #fff !important;
+              --gaius-shell-accent-strong: #fff !important;
+            }
+
+            html, body, #mc-canvas, #boot-screen {
+              background: #000 !important;
+            }
+
+            #boot-screen::before,
+            #gaius-shell-header,
+            #gaius-shell-footer,
+            #perf-hud,
+            #boot-progress-text {
+              display: none !important;
+            }
+
+            #boot-brand {
+              top: 46% !important;
+              color: #fff !important;
+              font: 900 clamp(42px, 10vw, 86px)/0.82 Arial, Helvetica, sans-serif !important;
+              letter-spacing: -0.045em !important;
+              text-shadow: none !important;
+              animation: none !important;
+            }
+
+            #boot-brand span {
+              margin-top: 16px !important;
+              color: #fff !important;
+              font-size: 0.17em !important;
+              font-weight: 700 !important;
+              letter-spacing: 0.22em !important;
+            }
+
+            #boot-progress {
+              top: 60% !important;
+              width: min(420px, calc(100vw - 56px)) !important;
+              height: 8px !important;
+              padding: 1px !important;
+              border: 1px solid rgba(255,255,255,.9) !important;
+              background: transparent !important;
+            }
+
+            #boot-progress-bar {
+              background: #fff !important;
+              transition: width 120ms linear !important;
+            }
+
+            #status:not([data-state="error"]) {
+              display: none !important;
+            }
+
+            #status[data-state="error"] {
+              top: 66% !important;
+              max-width: 680px !important;
+              border: 1px solid #fff !important;
+              background: rgba(0,0,0,.94) !important;
+              color: #fff !important;
+            }
+
+            @media (max-width: 600px) {
+              #boot-brand {
+                top: 44% !important;
+                font-size: 48px !important;
+              }
+              #boot-progress {
+                top: 58% !important;
+              }
+            }
+          </style>
+          """
+
+          if "</head>" not in text:
+              raise SystemExit("launcher is missing </head>")
+          text=text.replace("</head>",shell_override+"\n</head>",1)
+
+          # Visible launcher identity must be Minecraft-only. Internal runtime
+          # symbol names are intentionally left untouched for compatibility.
+          if ">GAIUS<span>CLIENT</span>" in text:
+              raise SystemExit("old boot brand survived deploy rewrite")
+          if "<strong>GAIUS</strong><span>CLIENT</span>" in text:
+              raise SystemExit("old shell brand survived deploy rewrite")
+          if "minecraft263-boot-override" not in text:
+              raise SystemExit("Minecraft boot override was not injected")
+
           output.write_text(text,encoding="utf-8")
           PY
 
