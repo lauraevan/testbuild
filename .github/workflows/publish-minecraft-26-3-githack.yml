@@ -1,0 +1,104 @@
+name: publish-minecraft-26-3-githack
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/publish-minecraft-26-3-githack.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-minecraft-26-3-githack
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_URL: https://github.com/TypeThe0ry/Gaius/releases/download/v0.3.3/Gaius-26.3.html
+      RELEASE_SHA256: 0c1ab5fc49c244bac0f16ef000a9f4f36fa3414180f02a6775c4977c672c97d3
+      RELEASE_SIZE: "129069152"
+      CHUNK_BYTES: "4194304"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and verify Minecraft 26.3 browser build
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/minecraft-26.3"
+          mkdir -p "$work"
+          curl -fL --retry 5 --retry-delay 2 -o "$work/source.html" "$RELEASE_URL"
+          test "$(sha256sum "$work/source.html" | awk '{print $1}')" = "$RELEASE_SHA256"
+          test "$(wc -c < "$work/source.html" | tr -d ' ')" = "$RELEASE_SIZE"
+
+      - name: Apply deploy identity without repacking
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/minecraft-26.3"
+          python3 - "$work/source.html" "$work/game.html" <<'PY'
+          import pathlib,re,sys
+          source=pathlib.Path(sys.argv[1])
+          output=pathlib.Path(sys.argv[2])
+          text=source.read_text(encoding="utf-8")
+          titles=re.findall(r"<title>[^<]*Gaius[^<]*</title>",text,flags=re.I)
+          if len(titles)!=1:
+              raise SystemExit(f"expected one Gaius title, found {len(titles)}")
+          text=text.replace(titles[0],"<title>Minecraft 26.3</title>",1)
+          for old,new in [
+              (">GAIUS<span>CLIENT</span>",">MINECRAFT<span>26.3</span>"),
+              ("<strong>GAIUS</strong><span>CLIENT</span>","<strong>MINECRAFT</strong><span>26.3</span>"),
+              ("Starting Gaius Client","Starting Minecraft 26.3"),
+          ]:
+              text=text.replace(old,new)
+          output.write_text(text,encoding="utf-8")
+          PY
+
+      - name: Split into GitHack-friendly same-origin chunks
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/minecraft-26.3"
+          chunks="$root/chunks"
+          work="$RUNNER_TEMP/minecraft-26.3"
+          rm -rf "$chunks"
+          mkdir -p "$chunks"
+
+          split -b "$CHUNK_BYTES" -d -a 3 "$work/game.html" "$chunks/chunk-"
+
+          python3 - "$root" "$work/game.html" <<'PY'
+          import hashlib,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          game=pathlib.Path(sys.argv[2])
+          files=sorted((root/"chunks").glob("chunk-*"))
+          if not files:
+              raise SystemExit("no chunks generated")
+          manifest={
+              "minecraftVersion":"26.3",
+              "protocolVersion":777,
+              "source":"Gaius v0.3.3 pinned browser release",
+              "sourceSha256":"0c1ab5fc49c244bac0f16ef000a9f4f36fa3414180f02a6775c4977c672c97d3",
+              "gameSha256":hashlib.sha256(game.read_bytes()).hexdigest(),
+              "totalBytes":game.stat().st_size,
+              "chunkBytes":4194304,
+              "chunks":["chunks/"+p.name for p in files],
+          }
+          (root/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n",encoding="utf-8")
+          print(json.dumps(manifest,indent=2))
+          PY
+
+      - name: Commit generated deploy chunks
+        run: |
+          set -euo pipefail
+          git config user.name "minecraft-26.3-deploy"
+          git config user.email "actions@users.noreply.github.com"
+          git add minecraft-26.3/chunks minecraft-26.3/manifest.json
+          if git diff --cached --quiet; then
+            echo "Deploy chunks already current"
+            exit 0
+          fi
+          git commit -m "Publish streamed Minecraft 26.3 GitHack build"
+          git push origin HEAD:main
