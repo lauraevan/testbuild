@@ -3,8 +3,8 @@
   "protocolVersion": 777,
   "source": "Gaius v0.3.3 pinned browser release",
   "sourceSha256": "0c1ab5fc49c244bac0f16ef000a9f4f36fa3414180f02a6775c4977c672c97d3",
-  "gameSha256": "309b13185ef13565c790f3038876f12594d8353ad399ce9db887facef24ce448",
-  "totalBytes": 129063599,
+  "gameSha256": "c9ca86827d150638fae824141dfdefd4b7c3527cc603fa14e57b13b3f599a965",
+  "totalBytes": 129065421,
   "chunkBytes": 4194304,
   "chunks": [
     "chunks/chunk-000",
