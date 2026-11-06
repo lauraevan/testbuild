@@ -1,4 +1,4 @@
-name: ClaudeFaithful v0.7 iOS 26 Liquid Glass build
+name: ClaudeFaithful v0.8 iOS 26 Liquid Glass build
 on:
   push:
     branches: [claudefaithful-ios-build]
@@ -40,7 +40,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ClaudeFaithful-v0.7-unsigned-IPA
+          name: ClaudeFaithful-v0.8-unsigned-IPA
           path: ClaudeFaithful-build/dist/ClaudeFaithful-unsigned.ipa
           if-no-files-found: error
       - name: Run iOS 26 simulator screenshots
@@ -64,16 +64,20 @@ jobs:
           xcrun simctl launch "$UDID" dev.bullet.claudefrontend
           sleep 7
           mkdir -p dist
-          xcrun simctl io "$UDID" screenshot "$PWD/dist/ClaudeFaithful-v0.7-home.png"
+          xcrun simctl io "$UDID" screenshot "$PWD/dist/ClaudeFaithful-v0.8-home.png"
           xcrun simctl terminate "$UDID" dev.bullet.claudefrontend
           xcrun simctl launch "$UDID" dev.bullet.claudefrontend --settings-snapshot
           sleep 7
-          xcrun simctl io "$UDID" screenshot "$PWD/dist/ClaudeFaithful-v0.7-settings.png"
+          xcrun simctl io "$UDID" screenshot "$PWD/dist/ClaudeFaithful-v0.8-settings.png"
+          xcrun simctl terminate "$UDID" dev.bullet.claudefrontend
+          xcrun simctl launch "$UDID" dev.bullet.claudefrontend --chat-snapshot
+          sleep 6
+          xcrun simctl io "$UDID" screenshot "$PWD/dist/ClaudeFaithful-v0.8-chat.png"
           xcrun simctl shutdown "$UDID"
       - name: Upload simulator screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ClaudeFaithful-v0.7-screenshots
-          path: ClaudeFaithful-build/dist/ClaudeFaithful-v0.7-*.png
+          name: ClaudeFaithful-v0.8-screenshots
+          path: ClaudeFaithful-build/dist/ClaudeFaithful-v0.8-*.png
           if-no-files-found: ignore
