@@ -1,4 +1,4 @@
-name: ClaudeFaithful v0.5 iOS build
+name: ClaudeFaithful v0.5.1 iOS build
 on:
   push:
     branches: [claudefaithful-ios-build]
@@ -28,7 +28,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ClaudeFaithful-v0.5-unsigned-IPA
+          name: ClaudeFaithful-v0.5.1-unsigned-IPA
           path: ClaudeFaithful-build/dist/ClaudeFaithful-unsigned.ipa
           if-no-files-found: error
       - name: Run iPhone simulator and capture home/settings
@@ -60,6 +60,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ClaudeFaithful-v0.5-simulator
+          name: ClaudeFaithful-v0.5.1-simulator
           path: ClaudeFaithful-build/dist/ClaudeFaithful-*.png
           if-no-files-found: ignore
