@@ -1,0 +1,33 @@
+name: Build ClaudeFaithful unsigned IPA
+on:
+  push:
+    branches:
+      - build/claude-faithful-ios
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack SwiftUI source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          Path("project.zip").write_bytes(base64.b64decode(Path("payload.b64").read_text()))
+          PY
+          unzip -q project.zip
+      - name: Verify Xcode
+        run: xcodebuild -version
+      - name: Compile unsigned iPhone app and package IPA
+        run: bash tools/build_unsigned_ipa.sh
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeFaithful-unsigned-IPA
+          path: dist/ClaudeFaithful-unsigned.ipa
+          if-no-files-found: error
