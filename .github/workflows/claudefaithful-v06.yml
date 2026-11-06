@@ -1,0 +1,36 @@
+name: ClaudeFaithful v0.6 iOS unsigned IPA
+on:
+  push:
+    branches: [claudefaithful-v06-build]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract complete Xcode project
+        run: |
+          mkdir -p "ClaudeFaithful-v06"
+          unzip -o -q "build_inputs/ClaudeFaithful-v06-source.zip" -d "ClaudeFaithful-v06"
+          test -s ClaudeFaithful-v06/Sources/ChatStore.swift
+      - name: Build unsigned iPhone application
+        run: |
+          xcodebuild -version
+          bash tools/build_unsigned_ipa.sh
+        working-directory: ClaudeFaithful-v06
+      - name: Verify IPA archive and version
+        run: |
+          test -s ClaudeFaithful-v06/dist/ClaudeFaithful-unsigned.ipa
+          unzip -t ClaudeFaithful-v06/dist/ClaudeFaithful-unsigned.ipa | tail -2
+          unzip -p ClaudeFaithful-v06/dist/ClaudeFaithful-unsigned.ipa Payload/ClaudeFaithful.app/Info.plist > /tmp/ClaudeFaithful-Info.plist
+          /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' /tmp/ClaudeFaithful-Info.plist | grep -Fx '0.6.0'
+          /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' /tmp/ClaudeFaithful-Info.plist
+      - name: Upload compiled unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeFaithful-v0.6-unsigned-IPA
+          path: ClaudeFaithful-v06/dist/ClaudeFaithful-unsigned.ipa
+          if-no-files-found: error
