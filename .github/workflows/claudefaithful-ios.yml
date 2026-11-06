@@ -1,4 +1,4 @@
-name: ClaudeFaithful unsigned iOS IPA
+name: ClaudeFaithful iOS recreation build
 on:
   push:
     branches: [claudefaithful-ios-build]
@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack SwiftUI project
+      - name: Unpack updated SwiftUI project
         run: |
           mkdir -p "$GITHUB_WORKSPACE/ClaudeFaithful-build"
           unzip -o -q "$GITHUB_WORKSPACE/build_inputs/ClaudeFaithful-source.zip" -d "$GITHUB_WORKSPACE/ClaudeFaithful-build"
@@ -27,6 +27,34 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ClaudeFaithful-unsigned-IPA
+          name: ClaudeFaithful-v0.3-unsigned-IPA
           path: ClaudeFaithful-build/dist/ClaudeFaithful-unsigned.ipa
           if-no-files-found: error
+      - name: Run in iOS simulator and take screenshot
+        continue-on-error: true
+        timeout-minutes: 15
+        working-directory: ClaudeFaithful-build
+        run: |
+          xcodebuild -project ClaudeFaithful.xcodeproj -scheme ClaudeFaithful -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$PWD/build-sim" CODE_SIGNING_ALLOWED=NO build >/tmp/claude-sim-build.log 2>&1 || {
+              tail -120 /tmp/claude-sim-build.log
+              exit 1
+            }
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin)["devices"]; a=[x["udid"] for group in d.values() for x in group if "iPhone" in x["name"] and x["state"]=="Shutdown"]; print(a[0] if a else "")')
+          if [ -z "$UDID" ]; then echo 'No available iPhone simulator'; exit 0; fi
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$PWD/build-sim/Build/Products/Debug-iphonesimulator/ClaudeFaithful.app"
+          xcrun simctl launch "$UDID" dev.bullet.claudefrontend
+          sleep 5
+          mkdir -p dist
+          xcrun simctl io "$UDID" screenshot "$PWD/dist/ClaudeFaithful-home.png"
+          xcrun simctl shutdown "$UDID"
+      - name: Upload simulator screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeFaithful-v0.3-simulator
+          path: ClaudeFaithful-build/dist/ClaudeFaithful-home.png
+          if-no-files-found: ignore
