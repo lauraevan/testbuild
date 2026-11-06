@@ -1,0 +1,32 @@
+name: ClaudeFaithful unsigned iOS IPA
+on:
+  push:
+    branches: [claudefaithful-ios-build]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack SwiftUI project
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/ClaudeFaithful-build"
+          unzip -o -q "$GITHUB_WORKSPACE/build_inputs/ClaudeFaithful-source.zip" -d "$GITHUB_WORKSPACE/ClaudeFaithful-build"
+      - name: Show Xcode
+        run: xcodebuild -version
+      - name: Compile and package unsigned IPA
+        run: bash tools/build_unsigned_ipa.sh
+        working-directory: ClaudeFaithful-build
+      - name: Verify compiled IPA
+        run: |
+          test -s ClaudeFaithful-build/dist/ClaudeFaithful-unsigned.ipa
+          unzip -l ClaudeFaithful-build/dist/ClaudeFaithful-unsigned.ipa | head -50
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeFaithful-unsigned-IPA
+          path: ClaudeFaithful-build/dist/ClaudeFaithful-unsigned.ipa
+          if-no-files-found: error
